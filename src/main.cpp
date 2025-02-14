@@ -1,14 +1,58 @@
 #include "main.h"
+#include "catLib/api.hpp"
 
-/**
- * A callback function for LLEMU's center button.
- *
- * When this callback is fired, it will toggle line 2 of the LCD text between
- * "I was pressed!" and nothing.
- */
-void on_center_button() {
+pros::Controller controller(pros::E_CONTROLLER_MASTER);
+pros::MotorGroup leftDrive({4, -3, -5});  // Creates a motor group with forward ports and reversed ports
+pros::MotorGroup rightDrive({-7, 10, 8});  // Creates a motor group with forward ports and reversed ports
 
-}
+pros::Rotation verticalEncoder(-14);
+pros::Rotation horizontalEncoder(1);
+pros::Imu inertial1(2);
+
+catlib::Drivetrain dt(
+    &leftDrive,
+    &rightDrive,
+    catlib::omniWheel::OMNI_325,
+    450
+);
+
+catlib::PIDConstants lateral_pid(
+    6.5,
+    0,
+    30
+);
+
+catlib::PIDConstants angular_pid(
+    2.5,
+    0,
+    25
+);
+
+catlib::TrackingWheel vertical_tracker(
+    &verticalEncoder,
+    2.75,
+    0.876
+);
+
+catlib::TrackingWheel horizontal_tracker(
+    &horizontalEncoder,
+    2.75,
+    -3.2455
+);
+
+catlib::OdomSensors sensors(
+    &inertial1,
+    &vertical_tracker,
+    &vertical_tracker
+);
+
+catlib::Chassis cat (
+    &dt,
+    &lateral_pid,
+    &angular_pid,
+    &sensors,
+    catlib::DriveType::SPLIT_ARCADE
+);
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
@@ -17,6 +61,8 @@ void on_center_button() {
  * to keep execution time for this mode under a few seconds.
  */
 void initialize() {
+	cat.calibrate();
+    //cat.initializeOdom();
 }
 
 /**
@@ -48,7 +94,14 @@ void competition_initialize() {}
  * will be stopped. Re-enabling the robot will restart the task, not re-start it
  * from where it left off.
  */
-void autonomous() {}
+void autonomous() {
+    cat.setBrakeMode(pros::E_MOTOR_BRAKE_BRAKE);
+    cat.movePID(17.5, 2000);
+    cat.turnToHeadingPID(90);
+    pros::delay(500);
+    cat.turnToHeadingPID(180, 1, true);
+    cat.movePID(17.5, 2000);
+}
 
 /**
  * Runs the operator control code. This function will be started in its own task
@@ -64,21 +117,17 @@ void autonomous() {}
  * task, not resume it from where it left off.
  */
 void opcontrol() {
-	pros::Controller master(pros::E_CONTROLLER_MASTER);
-	pros::MotorGroup left_mg({1, -2, 3});    // Creates a motor group with forwards ports 1 & 3 and reversed port 2
-	pros::MotorGroup right_mg({-4, 5, -6});  // Creates a motor group with forwards port 5 and reversed ports 4 & 6
-
-
+    cat.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
 	while (true) {
-		pros::lcd::print(0, "%d %d %d", (pros::lcd::read_buttons() & LCD_BTN_LEFT) >> 2,
-		                 (pros::lcd::read_buttons() & LCD_BTN_CENTER) >> 1,
-		                 (pros::lcd::read_buttons() & LCD_BTN_RIGHT) >> 0);  // Prints status of the emulated screen LCDs
-
 		// Arcade control scheme
-		int dir = master.get_analog(ANALOG_LEFT_Y);    // Gets amount forward/backward from left joystick
-		int turn = master.get_analog(ANALOG_RIGHT_X);  // Gets the turn left/right from right joystick
-		left_mg.move(dir - turn);                      // Sets left motor voltage
-		right_mg.move(dir + turn);                     // Sets right motor voltage
-		pros::delay(20);                               // Run for 20 ms then update
+		int dir = controller.get_analog(ANALOG_LEFT_Y);    // Gets amount forward/backward from left joystick
+		int turn = controller.get_analog(ANALOG_RIGHT_X);  // Gets the turn left/right from right joystick
+		leftDrive.move(dir + turn);                      // Sets left motor voltage
+		rightDrive.move(dir - turn);                     // Sets right motor voltage
+
+        //cat.track();
+
+        controller.print(0, 0, "X:%.0lf Y:%.0lf T:%.0lf   ", cat.getPose()[0], cat.getPose()[1], cat.getPoseWithTheta()[2]);
+		pros::delay(10);                               // Run for 10 ms then update
 	}
 }

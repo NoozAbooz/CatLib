@@ -16,7 +16,11 @@ catlib::Chassis::Chassis(Drivetrain* drivetrain, PIDConstants* linearPIDConstant
     this->d = d;
 }
 
-void catlib::Chassis::setBrakeMode(pros::MotorBrake brakeMode) {
+void catlib::Chassis::mirrorAutons(bool state) {
+    this->mirror = state;
+}
+
+void catlib::Chassis::setBrakeMode(pros::motor_brake_mode_e brakeMode) {
     this->drivetrain->leftMotors->set_brake_mode_all(brakeMode);
     this->drivetrain->rightMotors->set_brake_mode_all(brakeMode);
 }
@@ -25,7 +29,7 @@ Vector2d catlib::Chassis::getPose() {
     return this->pose;
 }
 
-Vector3d catlib::Chassis::getPoseWithTheta(bool isRadian = false) {
+Vector3d catlib::Chassis::getPoseWithTheta(bool isRadian) {
     double currHeading = this->heading;
     if (isRadian) {
         currHeading = currHeading / 180 * M_PI;
@@ -34,15 +38,18 @@ Vector3d catlib::Chassis::getPoseWithTheta(bool isRadian = false) {
     return currPose;
 }
 
-void catlib::Chassis::track() {
+void catlib::Chassis::initializeOdom() {
     double currentVertical = this->odomSensors->vertical->distanceTraveled();
     double currentHorizontal = this->odomSensors->horizontal->distanceTraveled();
     double prevVertical = currentVertical;
     double prevHorizontal = currentHorizontal;
     double currentHeading = this->odomSensors->inertial->get_rotation();
     double prevHeading = currentHeading;
-    while (1) {
-        currentHeading = this->odomSensors->inertial->get_rotation();
+}
+
+void catlib::Chassis::track() {
+    if (!isnanf(currentHeading) && !isinf(currentHeading)) {
+        double currentHeading = this->odomSensors->inertial->get_rotation();
         double deltaHeading = currentHeading - prevHeading;
         double avgHeading = (currentHeading + prevHeading) / 2;
         double currentVertical = this->odomSensors->vertical->distanceTraveled();
@@ -77,7 +84,6 @@ void catlib::Chassis::track() {
         prevHeading = currentHeading;
         prevHorizontal = currentHorizontal;
         prevVertical = currentVertical;
-        pros::delay(5);
     }
 }
 
@@ -101,11 +107,11 @@ void catlib::Chassis::setPose(double x, double y, double theta = -10000000, bool
 }
 
 void catlib::Chassis::setDrive(double l, double r) {
-    this->drivetrain->leftMotors->move_voltage(l);
-    this->drivetrain->rightMotors->move_voltage(r);
+    this->drivetrain->leftMotors->move(l);
+    this->drivetrain->rightMotors->move(r);
 }
 
-void catlib::Chassis::driveStraightPID(double targetDistance, double speedCap = 1, double timeOut = 5000) {
+void catlib::Chassis::movePID(double targetDistance, double timeOut, double speedCap, double exitRange) {
     this->linearPID.reset();
     this->angularPID.reset();
     double error = targetDistance;
@@ -114,16 +120,19 @@ void catlib::Chassis::driveStraightPID(double targetDistance, double speedCap = 
     double distance = this->odomSensors->vertical->distanceTraveled();
     double prevDistance = distance;
     double distanceTraveled = 0;
-    while ((fabs(error) > 0.2 || (this->drivetrain->leftMotors->get_actual_velocity() * this->drivetrain->wheelDiameter / 6000 * M_PI) > 0.06) && time <= timeOut) {
+
+    this->setDrive(80, 80);
+    pros::delay(10);
+    while ((fabs(error) > exitRange || (this->drivetrain->leftMotors->get_actual_velocity() * this->drivetrain->wheelDiameter / 36000 * M_PI) > 0.06) && time <= timeOut) {
         distance = this->odomSensors->vertical->distanceTraveled();
         double deltaDistance = distance - prevDistance;
         distanceTraveled += deltaDistance;
         error = targetDistance - distanceTraveled;
         double driveOutput = this->linearPID.output(error);
         double degError = targetDeg - this->odomSensors->inertial->get_rotation();
-        double turnOutput = this->angularPID.output(degError);
-        driveOutput = catlib::limit(driveOutput, -12000 * speedCap, 12000 * speedCap);
-        turnOutput = catlib::limit(turnOutput, -12000 * speedCap, 12000 * speedCap);
+        double turnOutput = this->angularPID.output(degError) * 0.5;
+        driveOutput = catlib::limit(driveOutput, -127 * speedCap, speedCap * 127);
+        turnOutput = catlib::limit(turnOutput, -127 * speedCap, 127 * speedCap);
         this->setDrive(left_velocity_scaling(driveOutput, turnOutput), right_velocity_scaling(driveOutput, turnOutput));
         prevDistance = distance;
         time += 10;
@@ -132,25 +141,39 @@ void catlib::Chassis::driveStraightPID(double targetDistance, double speedCap = 
     this->setDrive(0, 0);
 }
 
-void catlib::Chassis::turnToHeadingPID(double heading, double speedRatio, bool reversed = 0) {
+void catlib::Chassis::turnToHeadingPID(double targetHeading, double speedRatio, bool reversed, double exitRange) {
     this->angularPID.reset();
-    double error = heading - this->odomSensors->inertial->get_rotation();
-    double prevError = error;
-    double deltaError = error - prevError;
+    double heading = fmod(this->odomSensors->inertial->get_rotation(), 360); // wrap to [0, 360) for user view
+    if (heading < 0) {
+    	heading += 360;
+	}
 
-    while (fabs(error) > 0.2 || fabs(deltaError) > 0.05) {
-        error = heading - this->odomSensors->inertial->get_rotation() - reversed * 180;
+    if (mirror) {
+        targetHeading = (360 - std::lround(targetHeading)) % 360;
+    }
+
+    double error = targetHeading - heading;
+    double prevError = error;
+    double deltaError = 9999;
+
+    while (fabs(error) > exitRange || fabs(deltaError) > 0.05) {
+        error = heading - this->odomSensors->inertial->get_rotation();
+
+        if (reversed) error *= -1;
+        
         double driveOutput = this->angularPID.output(error);
-        if (fabs(driveOutput) > 12000 && driveOutput > 0) driveOutput = 12000;
-        else if (fabs(driveOutput) > 12000 && driveOutput < 0) driveOutput = -12000;
+        if (fabs(driveOutput) > 127 && driveOutput > 0) driveOutput = 127;
+        else if (fabs(driveOutput) > 127 && driveOutput < 0) driveOutput = -127;
         driveOutput *= speedRatio;
         setDrive(driveOutput, -driveOutput);
+        prevError = error;
+        deltaError = error - prevError;
         pros::delay(10);
     }
     setDrive(0, 0);
 }
 
-void catlib::Chassis::driveToPoint(double x, double y, double timeOut, double maxVoltage, double minVoltage) {
+void catlib::Chassis::moveToPoint(double x, double y, double timeOut, double maxVoltage, double minVoltage) {
     this->linearPID.reset();
     this->angularPID.reset();
     Vector2d targetPose(x, y);

@@ -15,15 +15,19 @@ namespace catlib {
 
             void calibrate();
 
+            void initializeOdom();
+
             void track();
+
+            void mirrorAutons(bool state);
 
             void setPose(double x, double y, double theta, bool isRadian);
 
-            void setBrakeMode(pros::MotorBrake brakeMode);
+            void setBrakeMode(pros::motor_brake_mode_e brakeMode);
 
             Vector2d getPose();
 
-            Vector3d getPoseWithTheta(bool isRadian);
+            Vector3d getPoseWithTheta(bool isRadian = false);
 
             void arcadeDrive(double linear, double angular);
 
@@ -31,11 +35,11 @@ namespace catlib {
 
             void setDrive(double l, double r);
 
-            void driveStraightPID(double targetDistance, double speedCap, double timeOut);
+            void movePID(double targetDistance,  double timeOut = 2000, double speedCap = 1, double exitRange = 0.2);
 
-            void turnToHeadingPID(double targetDeg, double speedRatio, bool reversed);
+            void turnToHeadingPID(double heading, double speedRatio = 1, bool reversed = 0, double exitRange = 0.2);
 
-            void driveToPoint(double x, double y, double timeOut, double maxVoltage, double minVoltage);
+            void moveToPoint(double x, double y, double timeOut, double maxVoltage, double minVoltage);
 
             void turnToPoint(double x, double y, double timeOut, double speedCap);
 
@@ -52,5 +56,12 @@ namespace catlib {
             DriveType d;
             Vector2d pose;
             double heading;
+            double currentHeading;
+
+            double prevHeading;
+            double prevVertical;
+            double prevHorizontal;
+
+            bool mirror;
     };
 }

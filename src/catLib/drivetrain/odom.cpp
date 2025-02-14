@@ -1,4 +1,5 @@
 #include "main.h"
+#include "catlib/driveTrain/drivetrain.hpp"
 
 catlib::TrackingWheel::TrackingWheel(pros::Rotation* rotation, double wheelDiameter, double offset) {
     this->rotation = rotation;
@@ -11,7 +12,7 @@ void catlib::TrackingWheel::reset() {
 }
 
 double catlib::TrackingWheel::distanceTraveled() {
-    return this->rotation->get_position() / 36000 * this->wheelDiameter * M_PI;
+    return this->rotation->get_position() / 36000.0 * this->wheelDiameter * M_PI;
 }
 
 catlib::OdomSensors::OdomSensors(pros::Imu* inertial, TrackingWheel* vertical = nullptr, TrackingWheel* horizontal = nullptr) {

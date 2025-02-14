@@ -20,7 +20,6 @@
 #define _PROS_API_H_
 
 #ifdef __cplusplus
-#include "catLib/Eigen/Dense"
 #include <cerrno>
 #include <cmath>
 #include <cstdbool>
@@ -81,7 +80,6 @@
 #include "pros/rtos.hpp"
 #include "pros/screen.hpp"
 #include "pros/vision.hpp"
-using namespace Eigen;
 #endif
 
 #endif  // _PROS_API_H_
